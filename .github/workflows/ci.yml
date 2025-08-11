@@ -1,0 +1,155 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_NAME: catalog_cli
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy, rustfmt
+          cache: true
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+
+      - name: Run tests
+        run: cargo test --all-features
+
+  build:
+    name: Build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Prepare Windows artifact
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Copy-Item "target/release/$env:APP_NAME.exe" "$env:APP_NAME.exe"
+          "ARTIFACT_NAME=$($env:APP_NAME)-windows.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "BINARY_PATH=$($env:APP_NAME).exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Prepare macOS artifact
+        if: matrix.os == 'macos-latest'
+        run: |
+          cp target/release/$APP_NAME $APP_NAME
+          echo "ARTIFACT_NAME=$APP_NAME-macos" >> $GITHUB_ENV
+          echo "BINARY_PATH=$APP_NAME" >> $GITHUB_ENV
+
+      - name: Prepare Linux artifact
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cp target/release/$APP_NAME $APP_NAME
+          echo "ARTIFACT_NAME=$APP_NAME-linux" >> $GITHUB_ENV
+          echo "BINARY_PATH=$APP_NAME" >> $GITHUB_ENV
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.BINARY_PATH }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -la ./artifacts/*/
+
+      - name: Rename binaries for release
+        run: |
+          mkdir -p ./tmp-artifacts/
+          mv ./artifacts/$APP_NAME-linux/$APP_NAME ./tmp-artifacts/$APP_NAME-linux
+          mv ./artifacts/$APP_NAME-macos/$APP_NAME ./tmp-artifacts/$APP_NAME-macos
+          mv ./artifacts/$APP_NAME-windows.exe/$APP_NAME.exe ./tmp-artifacts/$APP_NAME-windows.exe
+          rm -rf ./artifacts/$APP_NAME-linux/
+          rm -rf ./artifacts/$APP_NAME-macos/
+          rm -rf ./artifacts/$APP_NAME-windows.exe/
+          mv ./tmp-artifacts/$APP_NAME-* ./artifacts/
+          rm -rf ./tmp-artifacts/
+          ls -la ./artifacts/
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          echo "tag=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
+          body: |
+            Automated release for commit ${{ github.sha }}
+
+            ## Changes
+            - Latest changes from main branch
+
+            ## Downloads
+            - Linux: ${{ env.APP_NAME }}-linux
+            - macOS: ${{ env.APP_NAME }}-macos  
+            - Windows: ${{ env.APP_NAME }}-windows.exe
+          files: |
+            ./artifacts/${{ env.APP_NAME }}-linux
+            ./artifacts/${{ env.APP_NAME }}-macos
+            ./artifacts/${{ env.APP_NAME }}-windows.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
