@@ -30,5 +30,5 @@ fn main() {
     let item = catalog.get_by_index(1);
     let placeholder = Media::Placeholder;
 
-    println!("{:#?}", item.unwrap_or(&placeholder));
+    println!("{:#?}", item.unwrap_or(&placeholder).description());
 }
