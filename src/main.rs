@@ -1,25 +1,6 @@
-#[derive(Debug)]
-enum Media {
-    Book { title: String, author: String },
-    Movie { title: String, director: String },
-    Audiobook { title: String },
-}
+mod content;
 
-impl Media {
-    fn description(&self) -> String {
-        match self {
-            Media::Book { title, author } => {
-                format!("Book: {}, {}", title, author)
-            }
-            Media::Movie { title, director } => {
-                format!("Movie: {}, {}", title, director)
-            }
-            Media::Audiobook { title } => {
-                format!("Audiobook: {}", title)
-            }
-        }
-    }
-}
+use content::{catalog::Catalog, media::Media};
 
 fn main() {
     let audiobook = Media::Audiobook {
@@ -35,8 +16,19 @@ fn main() {
         title: String::from("Bad Book"),
         author: String::from("Bad Author"),
     };
+    let podcast = Media::Podcast(10);
+    let placeholder = Media::Placeholder;
 
-    println!("{}", audiobook.description());
-    println!("{}", good_movie.description());
-    println!("{}", bad_book.description());
+    let mut catalog = Catalog::new();
+
+    catalog.add(audiobook);
+    catalog.add(good_movie);
+    catalog.add(bad_book);
+    catalog.add(podcast);
+    catalog.add(placeholder);
+
+    let item = catalog.get_by_index(1);
+    let placeholder = Media::Placeholder;
+
+    println!("{:#?}", item.unwrap_or(&placeholder));
 }
