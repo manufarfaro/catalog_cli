@@ -22,9 +22,7 @@ impl Media {
             Media::Podcast(id) => {
                 format!("Podcast: {}", id)
             }
-            Media::Placeholder => {
-                format!("Placeholder")
-            }
+            Media::Placeholder => "Placeholder".to_string(),
         }
     }
 }
